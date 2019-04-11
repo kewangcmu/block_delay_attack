@@ -2547,14 +2547,6 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             }
         }
 
-        // customized code to log the sender of the new block
-        if(received_new_header) {
-            // get the block hash of this new block
-            std::string block_hash = cmpctblock.header.GetHash().ToString();
-            LogPrintf("received a new compact block at height %d from peer %s, block_hash: %s\n",
-                      pindex->nHeight, pfrom->addr.ToString(), block_hash);
-        }
-
         const CBlockIndex *pindex = nullptr;
         CValidationState state;
         if (!ProcessNewBlockHeaders({cmpctblock.header}, state, chainparams, &pindex)) {
@@ -2569,6 +2561,14 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                 }
                 return true;
             }
+        }
+
+        // customized code to log the sender of the new block
+        if(received_new_header) {
+            // get the block hash of this new block
+            std::string block_hash = cmpctblock.header.GetHash().ToString();
+            LogPrintf("received a new compact block at height %d from peer %s, block_hash: %s\n",
+                      pindex->nHeight, pfrom->addr.ToString(), block_hash);
         }
 
         if(received_new_header && pindex->nHeight >= 102) {
