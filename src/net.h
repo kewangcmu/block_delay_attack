@@ -32,6 +32,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <blockencodings.h>
+#include <protocol.h>
 
 #ifndef WIN32
 #include <arpa/inet.h>
@@ -646,6 +647,7 @@ public:
     std::unordered_map<std::string, int> relayed_fast_headers;
     // pending getdata request from the victim to respond
     std::unordered_set<std::string> getdata_request;
+    //std::unordered_set<std::vector<CInv>> pending_getdata;
 
     void reset() {
         attack_state = 0;

